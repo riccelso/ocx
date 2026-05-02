@@ -486,6 +486,8 @@ export class ConfigResolver {
 				componentPath = this.profile.ocx.componentPath
 			}
 			if (this.profile.opencode) {
+				const profileKeys = Object.keys(this.profile.opencode)
+				console.log(`[OCX Merge] Profile opencode keys: ${profileKeys.join(", ")}`)
 				opencode = this.mergeOpencode(opencode, this.profile.opencode)
 			}
 		}
@@ -504,10 +506,25 @@ export class ConfigResolver {
 		// 5. Apply local OpenCode config (ALWAYS merges with profile)
 		// Local opencode.jsonc always participates in merge regardless of exclude/include
 		// patterns to match OpenCode's layering semantics.
+		// Merge strategy: deep merge (project wins on conflicts), MCPs/providers merged by key.
 		if (this.localConfigDir) {
 			const localOpencodeConfig = this.loadLocalOpencodeConfig()
 			if (localOpencodeConfig) {
+				const localKeys = Object.keys(localOpencodeConfig)
+				console.log(`[OCX Merge] Project opencode keys: ${localKeys.join(", ")}`)
+				const beforeKeys = new Set(Object.keys(opencode))
 				opencode = this.mergeOpencode(opencode, localOpencodeConfig)
+				const afterKeys = Object.keys(opencode)
+				const newKeys = afterKeys.filter((k) => !beforeKeys.has(k))
+				const conflictKeys = afterKeys.filter(
+					(k) => beforeKeys.has(k) && localOpencodeConfig[k] !== undefined,
+				)
+				if (newKeys.length > 0) {
+					console.log(`[OCX Merge] Added from project: ${newKeys.join(", ")}`)
+				}
+				if (conflictKeys.length > 0) {
+					console.log(`[OCX Merge] Project overrides profile for: ${conflictKeys.join(", ")}`)
+				}
 			}
 		}
 

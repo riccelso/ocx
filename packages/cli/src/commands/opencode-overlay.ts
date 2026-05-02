@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto"
 import {
-	access,
 	copyFile,
 	cp,
 	lstat,
@@ -12,6 +11,7 @@ import {
 	rename,
 	rm,
 	unlink,
+	writeFile,
 } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { basename, dirname, isAbsolute, join, relative } from "node:path"
@@ -1043,69 +1043,50 @@ function toPrimaryPrepareError(error: unknown): ConfigError {
 	)
 }
 
-async function copyInstructionFilesToMergedDir(
+async function appendInstructionFilesToMergedDir(
 	projectDir: string,
 	mergedConfigDir: string,
-): Promise<{ copied: string[]; conflicts: string[] }> {
+): Promise<{ appended: string[]; skipped: string[] }> {
 	const instructionFiles = ["AGENTS.md", "CLAUDE.md", "CONTEXT.md"]
-	const copied: string[] = []
-	const conflicts: string[] = []
+	const appended: string[] = []
+	const skipped: string[] = []
 
 	for (const filename of instructionFiles) {
 		const sourcePath = join(projectDir, filename)
 		const destPath = join(mergedConfigDir, filename)
 
+		let projectContent: string
 		try {
-			await copyFile(sourcePath, destPath)
-			copied.push(filename)
+			projectContent = await readFile(sourcePath, "utf-8")
+		} catch (error) {
+			const errorCode = (error as NodeJS.ErrnoException).code
+			if (errorCode === "ENOENT") {
+				continue
+			}
+			throw error
+		}
+
+		let profileContent = ""
+		try {
+			profileContent = await readFile(destPath, "utf-8")
 		} catch (error) {
 			const errorCode = (error as NodeJS.ErrnoException).code
 			if (errorCode !== "ENOENT") {
 				throw error
 			}
 		}
-	}
 
-	return { copied, conflicts }
-}
-
-async function copyProfileInstructionFilesToMergedDir(
-	profileDir: string,
-	mergedConfigDir: string,
-): Promise<{ copied: string[]; conflicts: string[] }> {
-	const instructionFiles = ["AGENTS.md", "CLAUDE.md", "CONTEXT.md"]
-	const copied: string[] = []
-	const conflicts: string[] = []
-
-	for (const filename of instructionFiles) {
-		const sourcePath = join(profileDir, filename)
-		const destPath = join(mergedConfigDir, filename)
-
-		try {
-			const exists = await fileExists(destPath)
-			if (exists) {
-				conflicts.push(filename)
-			}
-			await copyFile(sourcePath, destPath)
-			copied.push(filename)
-		} catch (error) {
-			const errorCode = (error as NodeJS.ErrnoException).code
-			if (errorCode !== "ENOENT") {
-				throw error
-			}
+		if (profileContent.trim().length === 0) {
+			await writeFile(destPath, projectContent, "utf-8")
+			appended.push(`${filename} (project only)`)
+		} else {
+			const separator = `\n\n---\n## Project Configuration\n\n`
+			await writeFile(destPath, profileContent + separator + projectContent, "utf-8")
+			appended.push(`${filename} (merged: profile + project)`)
 		}
 	}
 
-	return { copied, conflicts }
-}
-
-async function fileExists(path: string): Promise<boolean> {
-	try {
-		await access(path)
-		return true
-	} catch {
-		return false
-	}
+	return { appended, skipped }
 }
 
 export async function prepareMergedConfigDirForProfile(
@@ -1118,17 +1099,11 @@ export async function prepareMergedConfigDirForProfile(
 	try {
 		mergedConfigDir = await mkdtemp(join(tmpdir(), OPENCODE_MERGED_DIR_PREFIX))
 
-		const projectResult = await copyInstructionFilesToMergedDir(options.projectDir, mergedConfigDir)
-		log(`[OCX Config] Project instruction files copied: ${projectResult.copied.join(", ") || "none"}`)
-
 		await copyProfileBaseToMergedDir(options.profileDir, mergedConfigDir)
 
-		const profileResult = await copyProfileInstructionFilesToMergedDir(options.profileDir, mergedConfigDir)
-		if (profileResult.copied.length > 0) {
-			log(`[OCX Config] Profile instruction files copied: ${profileResult.copied.join(", ")}`)
-		}
-		if (profileResult.conflicts.length > 0) {
-			log(`[OCX Config] ⚠️  Global config takes priority over project for: ${profileResult.conflicts.join(", ")}`)
+		const appendResult = await appendInstructionFilesToMergedDir(options.projectDir, mergedConfigDir)
+		if (appendResult.appended.length > 0) {
+			log(`[OCX Merge] Instruction files: ${appendResult.appended.join("; ")}`)
 		}
 
 		let hardeningLevel: OverlayHardeningLevel = "best-effort-js"
