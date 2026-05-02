@@ -1041,6 +1041,27 @@ function toPrimaryPrepareError(error: unknown): ConfigError {
 	)
 }
 
+async function copyInstructionFilesToMergedDir(
+	projectDir: string,
+	mergedConfigDir: string,
+): Promise<void> {
+	const instructionFiles = ["AGENTS.md", "CLAUDE.md", "CONTEXT.md"]
+
+	for (const filename of instructionFiles) {
+		const sourcePath = join(projectDir, filename)
+		const destPath = join(mergedConfigDir, filename)
+
+		try {
+			await copyFile(sourcePath, destPath)
+		} catch (error) {
+			const errorCode = (error as NodeJS.ErrnoException).code
+			if (errorCode !== "ENOENT") {
+				throw error
+			}
+		}
+	}
+}
+
 export async function prepareMergedConfigDirForProfile(
 	options: PrepareMergedConfigDirOptions,
 ): Promise<PreparedMergedConfigDir> {
@@ -1052,6 +1073,8 @@ export async function prepareMergedConfigDirForProfile(
 		mergedConfigDir = await mkdtemp(join(tmpdir(), OPENCODE_MERGED_DIR_PREFIX))
 
 		await copyProfileBaseToMergedDir(options.profileDir, mergedConfigDir)
+
+		await copyInstructionFilesToMergedDir(options.projectDir, mergedConfigDir)
 
 		let hardeningLevel: OverlayHardeningLevel = "best-effort-js"
 

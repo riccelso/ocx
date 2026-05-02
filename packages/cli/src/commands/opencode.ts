@@ -548,9 +548,11 @@ export function buildOpenCodeEnv(opts: {
 	configDir?: string
 	configContent?: string
 	titleContext?: OpenCodeTitleContext
+	disableProjectConfig?: boolean
 }): Record<string, string | undefined> {
 	// Profile presence gates both OPENCODE_DISABLE_PROJECT_CONFIG and OPENCODE_CONFIG_DIR
 	const hasProfile = Boolean(opts.profileName)
+	const shouldDisableProjectConfig = opts.disableProjectConfig ?? hasProfile
 	// Never leak stale inherited disable flag into no-profile launches.
 	const {
 		OPENCODE_DISABLE_PROJECT_CONFIG: _inheritedDisableProjectConfig,
@@ -565,7 +567,7 @@ export function buildOpenCodeEnv(opts: {
 	return {
 		...baseEnvWithoutDisableProjectConfig,
 		...(opts.opencodeBin !== undefined && { OPENCODE_BIN: opts.opencodeBin }),
-		...(hasProfile && { OPENCODE_DISABLE_PROJECT_CONFIG: "true" }),
+		...(shouldDisableProjectConfig && { OPENCODE_DISABLE_PROJECT_CONFIG: "true" }),
 		OPENCODE_CONFIG_DIR:
 			opts.configDir ??
 			(hasProfile ? getProfileDir(opts.profileName as string) : getGlobalConfigPath()),
@@ -763,6 +765,7 @@ async function runOpencode(args: string[], options: OpencodeOptions): Promise<vo
 					configDir: mergedConfig?.path,
 					configContent,
 					titleContext,
+					disableProjectConfig: !mergedConfig,
 				}),
 				stdin: "inherit",
 				stdout: "inherit",
