@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto"
 import {
+	access,
 	copyFile,
 	cp,
 	lstat,
@@ -14,6 +15,7 @@ import {
 } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { basename, dirname, isAbsolute, join, relative } from "node:path"
+import { log } from "node:console"
 import { Glob } from "bun"
 import { type ParseError, parse as parseJsonc, printParseErrorCode } from "jsonc-parser"
 import { array, object, string } from "zod"
@@ -1044,8 +1046,10 @@ function toPrimaryPrepareError(error: unknown): ConfigError {
 async function copyInstructionFilesToMergedDir(
 	projectDir: string,
 	mergedConfigDir: string,
-): Promise<void> {
+): Promise<{ copied: string[]; conflicts: string[] }> {
 	const instructionFiles = ["AGENTS.md", "CLAUDE.md", "CONTEXT.md"]
+	const copied: string[] = []
+	const conflicts: string[] = []
 
 	for (const filename of instructionFiles) {
 		const sourcePath = join(projectDir, filename)
@@ -1053,12 +1057,54 @@ async function copyInstructionFilesToMergedDir(
 
 		try {
 			await copyFile(sourcePath, destPath)
+			copied.push(filename)
 		} catch (error) {
 			const errorCode = (error as NodeJS.ErrnoException).code
 			if (errorCode !== "ENOENT") {
 				throw error
 			}
 		}
+	}
+
+	return { copied, conflicts }
+}
+
+async function copyProfileInstructionFilesToMergedDir(
+	profileDir: string,
+	mergedConfigDir: string,
+): Promise<{ copied: string[]; conflicts: string[] }> {
+	const instructionFiles = ["AGENTS.md", "CLAUDE.md", "CONTEXT.md"]
+	const copied: string[] = []
+	const conflicts: string[] = []
+
+	for (const filename of instructionFiles) {
+		const sourcePath = join(profileDir, filename)
+		const destPath = join(mergedConfigDir, filename)
+
+		try {
+			const exists = await fileExists(destPath)
+			if (exists) {
+				conflicts.push(filename)
+			}
+			await copyFile(sourcePath, destPath)
+			copied.push(filename)
+		} catch (error) {
+			const errorCode = (error as NodeJS.ErrnoException).code
+			if (errorCode !== "ENOENT") {
+				throw error
+			}
+		}
+	}
+
+	return { copied, conflicts }
+}
+
+async function fileExists(path: string): Promise<boolean> {
+	try {
+		await access(path)
+		return true
+	} catch {
+		return false
 	}
 }
 
@@ -1072,9 +1118,18 @@ export async function prepareMergedConfigDirForProfile(
 	try {
 		mergedConfigDir = await mkdtemp(join(tmpdir(), OPENCODE_MERGED_DIR_PREFIX))
 
+		const projectResult = await copyInstructionFilesToMergedDir(options.projectDir, mergedConfigDir)
+		log(`[OCX Config] Project instruction files copied: ${projectResult.copied.join(", ") || "none"}`)
+
 		await copyProfileBaseToMergedDir(options.profileDir, mergedConfigDir)
 
-		await copyInstructionFilesToMergedDir(options.projectDir, mergedConfigDir)
+		const profileResult = await copyProfileInstructionFilesToMergedDir(options.profileDir, mergedConfigDir)
+		if (profileResult.copied.length > 0) {
+			log(`[OCX Config] Profile instruction files copied: ${profileResult.copied.join(", ")}`)
+		}
+		if (profileResult.conflicts.length > 0) {
+			log(`[OCX Config] ⚠️  Global config takes priority over project for: ${profileResult.conflicts.join(", ")}`)
+		}
 
 		let hardeningLevel: OverlayHardeningLevel = "best-effort-js"
 
