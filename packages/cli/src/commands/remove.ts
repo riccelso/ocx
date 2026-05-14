@@ -16,6 +16,7 @@ import { NotFoundError, ValidationError } from "../utils/errors"
 import { handleError } from "../utils/handle-error"
 import { logger } from "../utils/logger"
 import { PathValidationError, validatePath } from "../utils/path-security"
+import { getEffectiveCwd } from "../utils/paths"
 import { checkFileIntegrity, parseCanonicalId } from "../utils/receipt"
 import { addCommonOptions, addVerboseOption } from "../utils/shared-options"
 import { createSpinner } from "../utils/spinner"
@@ -145,7 +146,7 @@ export function registerRemoveCommand(program: Command): void {
 }
 
 async function runRemove(componentRefs: string[], options: RemoveOptions): Promise<void> {
-	const cwd = options.cwd ?? process.cwd()
+	const cwd = options.cwd ?? getEffectiveCwd()
 	const provider = await LocalConfigProvider.requireInitialized(cwd)
 
 	// Guard: No components specified

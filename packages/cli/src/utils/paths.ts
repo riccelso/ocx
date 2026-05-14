@@ -5,6 +5,21 @@ import { resolveComponentTargetRoot } from "./component-root-resolution"
 import { ValidationError } from "./errors"
 import { PathValidationError, validatePath } from "./path-security"
 
+/**
+ * Returns the effective current working directory.
+ *
+ * When OCX is launched via a wrapper script that uses `bun --cwd` (or `cd`)
+ * to run from the OCX source directory, `process.cwd()` returns the OCX
+ * source path instead of the user's actual working directory.
+ *
+ * The wrapper script (`~/.local/bin/ocx`) saves the user's original cwd
+ * in the `OCX_ORIGINAL_CWD` environment variable before changing directories.
+ * This function prefers that variable when set, falling back to `process.cwd()`.
+ */
+export function getEffectiveCwd(): string {
+	return process.env.OCX_ORIGINAL_CWD ?? process.cwd()
+}
+
 const LOCAL_CONFIG_ROOT = ".opencode"
 const LOCAL_CONFIG_PREFIX = `${LOCAL_CONFIG_ROOT}/`
 

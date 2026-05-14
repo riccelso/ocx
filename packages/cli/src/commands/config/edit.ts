@@ -22,6 +22,7 @@ import { profileNameSchema } from "../../profile/schema"
 import { ConfigError, ProfileNotFoundError, ValidationError } from "../../utils/errors"
 import { handleError } from "../../utils/handle-error"
 import { logger } from "../../utils/logger"
+import { getEffectiveCwd } from "../../utils/paths"
 
 interface ConfigEditOptions {
 	global?: boolean
@@ -79,12 +80,12 @@ async function runConfigEdit(options: ConfigEditOptions): Promise<void> {
 		}
 	} else {
 		// Edit local config
-		const localConfigDir = findLocalConfigDir(process.cwd())
+		const localConfigDir = findLocalConfigDir(getEffectiveCwd())
 		if (localConfigDir) {
 			configPath = join(localConfigDir, OCX_CONFIG_FILE)
 		} else {
 			// Create .opencode directory if it doesn't exist
-			const newConfigDir = join(process.cwd(), LOCAL_CONFIG_DIR)
+			const newConfigDir = join(getEffectiveCwd(), LOCAL_CONFIG_DIR)
 			await mkdir(newConfigDir, { recursive: true })
 			configPath = join(newConfigDir, OCX_CONFIG_FILE)
 

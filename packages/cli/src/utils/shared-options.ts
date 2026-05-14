@@ -8,6 +8,7 @@
 
 import { Option } from "commander"
 import { InvalidProfileNameError } from "./errors"
+import { getEffectiveCwd } from "./paths"
 
 // =============================================================================
 // OPTION FACTORIES
@@ -19,7 +20,7 @@ import { InvalidProfileNameError } from "./errors"
  */
 export const sharedOptions = {
 	/** Working directory option */
-	cwd: () => new Option("--cwd <path>", "Working directory").default(process.cwd()),
+	cwd: () => new Option("--cwd <path>", "Working directory").default(getEffectiveCwd()),
 
 	/** Suppress non-essential output */
 	quiet: () => new Option("-q, --quiet", "Suppress output"),

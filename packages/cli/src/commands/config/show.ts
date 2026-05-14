@@ -10,6 +10,7 @@ import type { Command } from "commander"
 import kleur from "kleur"
 import { ConfigResolver } from "../../config/resolver"
 import { handleError } from "../../utils/handle-error"
+import { getEffectiveCwd } from "../../utils/paths"
 import { sharedOptions } from "../../utils/shared-options"
 
 interface ConfigShowOptions {
@@ -35,7 +36,7 @@ export function registerConfigShowCommand(parent: Command): void {
 }
 
 async function runConfigShow(options: ConfigShowOptions): Promise<void> {
-	const resolver = await ConfigResolver.create(process.cwd(), { profile: options.profile })
+	const resolver = await ConfigResolver.create(getEffectiveCwd(), { profile: options.profile })
 
 	if (options.origin) {
 		const configWithOrigin = resolver.resolveWithOrigin()

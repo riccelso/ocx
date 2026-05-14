@@ -22,7 +22,7 @@ import { ConfigError } from "../utils/errors"
 import { getGitInfo } from "../utils/git-context"
 import { handleError } from "../utils/handle-error"
 import { logger } from "../utils/logger"
-import { getGlobalConfigPath } from "../utils/paths"
+import { getGlobalConfigPath, getEffectiveCwd } from "../utils/paths"
 import {
 	canWriteOscTerminalTitle,
 	formatTerminalName,
@@ -598,8 +598,8 @@ export function registerOpencodeCommand(program: Command): void {
 }
 
 async function runOpencode(args: string[], options: OpencodeOptions): Promise<void> {
-	// Resolve project directory
-	const projectDir = process.cwd()
+	// Resolve project directory (use OCX_ORIGINAL_CWD when launched via wrapper script)
+	const projectDir = getEffectiveCwd()
 
 	// Create resolver with optional profile override
 	const resolver = await ConfigResolver.create(projectDir, { profile: options.profile })

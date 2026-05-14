@@ -53,7 +53,7 @@ import {
 	validateOpenCodePlugin,
 } from "../utils/npm-registry"
 import { PathValidationError, validatePath } from "../utils/path-security"
-import { resolveTargetPath } from "../utils/paths"
+import { getEffectiveCwd, resolveTargetPath } from "../utils/paths"
 import { registerPlannedWriteOrThrow } from "../utils/planned-writes"
 import { hashBundle, hashContent } from "../utils/receipt"
 import { addCommonOptions, addGlobalOption, addVerboseOption } from "../utils/shared-options"
@@ -227,7 +227,7 @@ export function registerAddCommand(program: Command): void {
 
 			if (runtimeOptions.profile) {
 				// Use ConfigResolver with profile - cwd is the profile directory
-				const resolver = await ConfigResolver.create(runtimeOptions.cwd ?? process.cwd(), {
+				const resolver = await ConfigResolver.create(runtimeOptions.cwd ?? getEffectiveCwd(), {
 					profile: runtimeOptions.profile,
 				})
 				// Profile mode: install to profile directory, not working directory
@@ -240,7 +240,7 @@ export function registerAddCommand(program: Command): void {
 			} else if (runtimeOptions.global) {
 				provider = await GlobalConfigProvider.requireInitialized()
 			} else {
-				provider = await LocalConfigProvider.requireInitialized(runtimeOptions.cwd ?? process.cwd())
+				provider = await LocalConfigProvider.requireInitialized(runtimeOptions.cwd ?? getEffectiveCwd())
 			}
 
 			await runAddCore(components, runtimeOptions, provider)

@@ -23,6 +23,7 @@ import { ensureOpencodeConfig } from "../updaters/update-opencode-config"
 import { ConflictError, NetworkError, ValidationError } from "../utils/errors"
 import { handleError } from "../utils/handle-error"
 import { logger } from "../utils/logger"
+import { getEffectiveCwd } from "../utils/paths"
 import { addCommonOptions, addGlobalOption, addVerboseOption } from "../utils/shared-options"
 import { createSpinner } from "../utils/spinner"
 
@@ -73,7 +74,7 @@ export function registerInitCommand(program: Command): void {
 }
 
 async function runInit(options: InitOptions): Promise<void> {
-	const cwd = options.cwd ?? process.cwd()
+	const cwd = options.cwd ?? getEffectiveCwd()
 
 	// Check for existing config in either location
 	const { path: configPath, exists } = findOcxConfig(cwd)
