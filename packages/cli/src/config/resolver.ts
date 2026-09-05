@@ -42,6 +42,7 @@ import { mergeOpencodeConfig } from "../registry/merge"
 import type { OcxConfig, RegistryConfig } from "../schemas/config"
 import { ocxConfigSchema, readReceipt } from "../schemas/config"
 import type { NormalizedOpencodeConfig } from "../schemas/registry"
+import { isTTY } from "../utils/env"
 import { ConfigError, ProfileNotFoundError, ProfilesNotInitializedError } from "../utils/errors"
 import { resolveGitRootSync } from "../utils/git-root"
 import { resolveRegistryInstructionPaths } from "../utils/instruction-paths"
@@ -487,7 +488,9 @@ export class ConfigResolver {
 			}
 			if (this.profile.opencode) {
 				const profileKeys = Object.keys(this.profile.opencode)
-				console.log(`[OCX Merge] Profile opencode keys: ${profileKeys.join(", ")}`)
+				if (isTTY) {
+					console.log(`[OCX Merge] Profile opencode keys: ${profileKeys.join(", ")}`)
+				}
 				opencode = this.mergeOpencode(opencode, this.profile.opencode)
 			}
 		}
@@ -511,7 +514,9 @@ export class ConfigResolver {
 			const localOpencodeConfig = this.loadLocalOpencodeConfig()
 			if (localOpencodeConfig) {
 				const localKeys = Object.keys(localOpencodeConfig)
-				console.log(`[OCX Merge] Project opencode keys: ${localKeys.join(", ")}`)
+				if (isTTY) {
+					console.log(`[OCX Merge] Project opencode keys: ${localKeys.join(", ")}`)
+				}
 				const beforeKeys = new Set(Object.keys(opencode))
 				opencode = this.mergeOpencode(opencode, localOpencodeConfig)
 				const afterKeys = Object.keys(opencode)
@@ -520,10 +525,14 @@ export class ConfigResolver {
 					(k) => beforeKeys.has(k) && localOpencodeConfig[k] !== undefined,
 				)
 				if (newKeys.length > 0) {
-					console.log(`[OCX Merge] Added from project: ${newKeys.join(", ")}`)
+					if (isTTY) {
+						console.log(`[OCX Merge] Added from project: ${newKeys.join(", ")}`)
+					}
 				}
 				if (conflictKeys.length > 0) {
-					console.log(`[OCX Merge] Project overrides profile for: ${conflictKeys.join(", ")}`)
+					if (isTTY) {
+						console.log(`[OCX Merge] Project overrides profile for: ${conflictKeys.join(", ")}`)
+					}
 				}
 			}
 		}

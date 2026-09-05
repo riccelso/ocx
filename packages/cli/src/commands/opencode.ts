@@ -21,7 +21,8 @@ import { dedupePluginsByCanonicalName, extractCanonicalPluginName } from "../reg
 import { ConfigError } from "../utils/errors"
 import { getGitInfo } from "../utils/git-context"
 import { handleError } from "../utils/handle-error"
-import { logger } from "../utils/logger"
+import { isTTY } from "../utils/env"
+import { logger, setLoggerOptions } from "../utils/logger"
 import { getGlobalConfigPath, getEffectiveCwd } from "../utils/paths"
 import {
 	canWriteOscTerminalTitle,
@@ -598,6 +599,11 @@ export function registerOpencodeCommand(program: Command): void {
 }
 
 async function runOpencode(args: string[], options: OpencodeOptions): Promise<void> {
+	// When stdout is piped (not a TTY), consumers expect a clean stream (e.g. NDJSON).
+	// Silence info-level CLI feedback so it does not interleave with child output.
+	if (!isTTY) {
+		setLoggerOptions({ quiet: true })
+	}
 	// Resolve project directory (use OCX_ORIGINAL_CWD when launched via wrapper script)
 	const projectDir = getEffectiveCwd()
 

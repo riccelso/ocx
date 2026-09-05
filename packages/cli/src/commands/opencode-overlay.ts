@@ -1,3 +1,4 @@
+import { log } from "node:console"
 import { randomUUID } from "node:crypto"
 import {
 	copyFile,
@@ -15,11 +16,11 @@ import {
 } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { basename, dirname, isAbsolute, join, relative } from "node:path"
-import { log } from "node:console"
 import { Glob } from "bun"
 import { type ParseError, parse as parseJsonc, printParseErrorCode } from "jsonc-parser"
 import { array, object, string } from "zod"
 import { findLocalConfigDir, OCX_CONFIG_FILE } from "../profile/paths"
+import { isTTY } from "../utils/env"
 import { ConfigError } from "../utils/errors"
 import { validatePath } from "../utils/path-security"
 
@@ -1101,9 +1102,14 @@ export async function prepareMergedConfigDirForProfile(
 
 		await copyProfileBaseToMergedDir(options.profileDir, mergedConfigDir)
 
-		const appendResult = await appendInstructionFilesToMergedDir(options.projectDir, mergedConfigDir)
+		const appendResult = await appendInstructionFilesToMergedDir(
+			options.projectDir,
+			mergedConfigDir,
+		)
 		if (appendResult.appended.length > 0) {
-			log(`[OCX Merge] Instruction files: ${appendResult.appended.join("; ")}`)
+			if (isTTY) {
+				log(`[OCX Merge] Instruction files: ${appendResult.appended.join("; ")}`)
+			}
 		}
 
 		let hardeningLevel: OverlayHardeningLevel = "best-effort-js"

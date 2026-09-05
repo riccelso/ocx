@@ -660,7 +660,8 @@ describe("oc command CLI contract", () => {
 
 			// /usr/bin/false exits 1, proving launch proceeded with the valid CLI profile.
 			expect(result.exitCode).toBe(1)
-			expect(result.output).toContain("Using profile: work")
+			// Non-TTY stdout: info logs are silenced so piped consumers get a clean stream.
+			expect(result.output).not.toContain("Using profile:")
 			expect(result.output).not.toContain('Profile "missing" not found')
 		} finally {
 			await cleanupTempDir(testDir)
