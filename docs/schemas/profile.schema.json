@@ -68,6 +68,12 @@
 			"type": "boolean",
 			"default": true,
 			"description": "Set terminal/tmux window name when launching OpenCode"
+		},
+		"serverFallback": {
+			"type": "string",
+			"enum": ["standalone", "start", "none"],
+			"default": "standalone",
+			"description": "Fallback when the OpenCode v2 background server is not running: standalone (inject --standalone), start (run opencode service start first, then fall back to standalone), or none (do nothing). Overridable via the OCX_SERVER_FALLBACK environment variable."
 		}
 	}
 }

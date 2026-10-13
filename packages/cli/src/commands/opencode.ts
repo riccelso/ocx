@@ -22,6 +22,13 @@ import { ConfigError } from "../utils/errors"
 import { getGitInfo } from "../utils/git-context"
 import { handleError } from "../utils/handle-error"
 import { logger } from "../utils/logger"
+import {
+	argsHaveExplicitServerOption,
+	detectOpencodeServiceStatus,
+	isTuiStyleLaunch,
+	resolveLaunchArgsForServerFallback,
+	resolveServerFallbackMode,
+} from "../utils/opencode-service"
 import { getGlobalConfigPath } from "../utils/paths"
 import {
 	canWriteOscTerminalTitle,
@@ -614,6 +621,24 @@ async function runOpencode(args: string[], options: OpencodeOptions): Promise<vo
 	const ocxConfig = profile?.ocx
 	const shouldRename = options.rename !== false && ocxConfig?.renameWindow !== false
 
+	// Determine OpenCode binary early so the background-server probe can run
+	// in parallel with config preparation below.
+	const configuredBin = resolveOpenCodeBinary({
+		configBin: ocxConfig?.bin,
+		envBin: process.env.OPENCODE_BIN,
+	})
+
+	// OpenCode v2 background server fallback (fail-open: never blocks launch).
+	// Skipped when disabled, when args already select a server explicitly,
+	// or when args look like an OpenCode subcommand (serve, run, mini, ...).
+	const serverFallback = resolveServerFallbackMode({
+		configValue: ocxConfig?.serverFallback,
+		envValue: process.env.OCX_SERVER_FALLBACK,
+	})
+	const shouldProbeServer =
+		serverFallback !== "none" && isTuiStyleLaunch(args) && !argsHaveExplicitServerOption(args)
+	const serverStatusPromise = shouldProbeServer ? detectOpencodeServiceStatus(configuredBin) : null
+
 	// Check for profile's opencode.jsonc (optional)
 	if (config.profileName) {
 		const profileOpencodePath = getProfileOpencodeConfig(config.profileName)
@@ -728,12 +753,6 @@ async function runOpencode(args: string[], options: OpencodeOptions): Promise<vo
 			return
 		}
 
-		// Determine OpenCode binary
-		const configuredBin = resolveOpenCodeBinary({
-			configBin: ocxConfig?.bin,
-			envBin: process.env.OPENCODE_BIN,
-		})
-
 		const hasProfileLaunchContext = Boolean(config.profileName)
 		const resolvedOpenCodeLaunchBin = hasProfileLaunchContext
 			? resolveStableOpenCodeLauncherPath({
@@ -748,12 +767,20 @@ async function runOpencode(args: string[], options: OpencodeOptions): Promise<vo
 				})
 			: undefined
 
+		// Apply the background-server fallback decision (awaits the parallel probe)
+		const launchArgs = await resolveLaunchArgsForServerFallback({
+			args,
+			bin: configuredBin,
+			fallback: serverFallback,
+			serverStatus: serverStatusPromise,
+		})
+
 		// Spawn OpenCode directly in the project directory with config via environment
 		const configContent = configToPass ? JSON.stringify(configToPass) : undefined
 
 		try {
 			proc = Bun.spawn({
-				cmd: [resolvedOpenCodeLaunchBin, ...args],
+				cmd: [resolvedOpenCodeLaunchBin, ...launchArgs],
 				cwd: projectDir,
 				env: buildOpenCodeEnv({
 					baseEnv: process.env as Record<string, string | undefined>,

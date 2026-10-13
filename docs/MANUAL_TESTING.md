@@ -2901,6 +2901,111 @@ Manual testing supplements automated tests with:
 
 ---
 
+## 18. ocx oc: OpenCode v2 Background Server Fallback
+
+Tests the automatic fallback when the OpenCode v2 background server is not running.
+Requires OpenCode v2 (`opencode --version` shows v2.x) with the `service` subcommand.
+
+### 18.1 Automatic Standalone Fallback (default)
+
+```bash
+# Arrange: stop the shared background server
+opencode service stop
+
+# Act: launch via OCX with a profile (use your test profile name)
+ocx oc -p <profile>
+
+# Assert:
+# - Warning on stderr: "OpenCode background server not detected — launching with --standalone..."
+# - OpenCode launches successfully with a private server
+# - Exit cleanly, then verify the launch did NOT start the shared service:
+opencode service status
+# -> stopped (still stopped; fallback did not start it)
+
+# Cleanup: restore the shared server if desired
+opencode service start
+```
+
+### 18.2 No Fallback When Server Is Running
+
+```bash
+opencode service start
+
+ocx oc -p <profile>
+
+# Assert:
+# - No standalone warning
+# - OpenCode connects to the shared server (sessions shared with other clients)
+
+opencode service stop
+```
+
+### 18.3 Explicit Args Win
+
+```bash
+opencode service stop
+
+ocx oc -p <profile> -- --standalone
+# Assert: no OCX warning (user intent is explicit; probe is skipped)
+
+ocx oc -p <profile> -- --server http://127.0.0.1:4096
+# Assert: no OCX warning (explicit server URL; probe is skipped)
+```
+
+### 18.4 start Fallback Mode
+
+```bash
+opencode service stop
+
+# Set in profile ocx.jsonc: "serverFallback": "start"
+$EDITOR ~/.config/opencode/profiles/<profile>/ocx.jsonc
+
+ocx oc -p <profile>
+# Assert: info message "OpenCode background server was not running — started it via `opencode service start`"
+opencode service status
+# -> running
+
+# Failure path: point bin at a broken launcher to force start failure,
+# or temporarily rename the service registration; OCX must warn and
+# launch with --standalone instead of hanging.
+```
+
+### 18.5 Disable via Config and Env
+
+```bash
+opencode service stop
+
+# Config: "serverFallback": "none" in profile ocx.jsonc
+ocx oc -p <profile>
+# Assert: no warning, launch passes through to OpenCode unchanged
+
+# Env override (wins over config):
+OCX_SERVER_FALLBACK=0 ocx oc -p <profile>
+# Assert: no warning, pass-through
+
+# Invalid env fails fast:
+OCX_SERVER_FALLBACK=banana ocx oc -p <profile>
+# Assert: config error listing valid values, launch aborted
+```
+
+### 18.6 Subcommands Pass Through Untouched
+
+```bash
+ocx oc -- --version
+ocx oc serve --port 4096   # if testing serve manually; stop with Ctrl+C
+# Assert: no probe/no --standalone injection for subcommand-style launches
+```
+
+### 18.7 Piped Output Stays Clean
+
+```bash
+opencode service stop
+ocx oc -p <profile> 2>/dev/null | cat
+# Assert: warning appears on stderr only; stdout carries OpenCode output only
+```
+
+---
+
 ## Notes
 
 ### Platform-Specific Behavior

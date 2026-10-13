@@ -39,6 +39,7 @@ export const DEFAULT_OCX_CONFIG: ProfileOcxConfig = {
 		"**/opencode.json",
 	],
 	include: [],
+	serverFallback: "standalone",
 }
 
 /**
@@ -49,6 +50,9 @@ export const DEFAULT_OCX_CONFIG_TEMPLATE = `{
   "$schema": "https://ocx.kdco.dev/schemas/profile.json",
   "registries": {},
   "renameWindow": true,
+  // Fallback when the OpenCode v2 background server is not running:
+  // "standalone" (inject --standalone), "start" (opencode service start), "none"
+  // "serverFallback": "standalone",
   "exclude": [
     // "**/AGENTS.md",
     "**/CLAUDE.md",

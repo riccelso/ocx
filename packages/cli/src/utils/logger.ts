@@ -38,6 +38,14 @@ export const logger = {
 		console.warn(kleur.yellow("warn"), ...args)
 	},
 
+	/**
+	 * Warning that must reach the user even in quiet mode (piped consumers
+	 * expect a clean stdout stream; stderr never pollutes it).
+	 */
+	warnAlways(...args: unknown[]): void {
+		console.warn(kleur.yellow("warn"), ...args)
+	},
+
 	error(...args: unknown[]): void {
 		// Errors are always shown
 		console.error(kleur.red("error"), ...args)

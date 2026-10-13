@@ -10,7 +10,7 @@
 
 import { Glob } from "bun"
 import type { infer as ZodInfer } from "zod"
-import { array, boolean, object, record, string } from "zod"
+import { array, boolean, object, record, string, enum as zEnum } from "zod"
 import { safeRelativePathSchema } from "./common"
 import { registryConfigSchema } from "./config"
 
@@ -28,6 +28,21 @@ const globPatternSchema = string().refine(
 	},
 	{ message: "Invalid glob pattern" },
 )
+
+/**
+ * Fallback behavior when the OpenCode v2 background server is not running.
+ *
+ * - "standalone": inject `--standalone` so OpenCode launches with a private
+ *   server (default).
+ * - "start": run `opencode service start` first; fall back to standalone if
+ *   that fails or times out.
+ * - "none": never intervene (launch passes through to OpenCode unchanged).
+ *
+ * Explicit `--standalone`/`--server` args always win and disable the probe.
+ * Overridable via the OCX_SERVER_FALLBACK environment variable.
+ */
+export const serverFallbackSchema = zEnum(["standalone", "start", "none"])
+export type ServerFallbackMode = ZodInfer<typeof serverFallbackSchema>
 
 // =============================================================================
 // PROFILE OCX CONFIG SCHEMA (ocx.jsonc in profiles)
@@ -90,6 +105,16 @@ export const profileOcxConfigSchema = object({
 	include: array(globPatternSchema)
 		.default([])
 		.describe("Glob patterns for project files to include (overrides exclude)"),
+
+	/**
+	 * Fallback when the OpenCode v2 background server is not running.
+	 * See serverFallbackSchema for semantics.
+	 */
+	serverFallback: serverFallbackSchema
+		.default("standalone")
+		.describe(
+			"Fallback when the OpenCode background server is not running: standalone (inject --standalone), start (run opencode service start first), or none",
+		),
 })
 
 export type ProfileOcxConfig = ZodInfer<typeof profileOcxConfigSchema>
