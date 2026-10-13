@@ -42,6 +42,7 @@ import { mergeOpencodeConfig } from "../registry/merge"
 import type { OcxConfig, RegistryConfig } from "../schemas/config"
 import { ocxConfigSchema, readReceipt } from "../schemas/config"
 import type { NormalizedOpencodeConfig } from "../schemas/registry"
+import { isTTY } from "../utils/env"
 import { ConfigError, ProfileNotFoundError, ProfilesNotInitializedError } from "../utils/errors"
 import { resolveGitRootSync } from "../utils/git-root"
 import { resolveRegistryInstructionPaths } from "../utils/instruction-paths"
@@ -356,13 +357,13 @@ export class ConfigResolver {
 	 * After construction, all getter methods are synchronous.
 	 *
 	 * Profile Resolution:
-	 * 1. Check local `.opencode/ocx.jsonc` for `profile` field
-	 * 2. Fall back to options.profile
+	 * 1. Check `--profile` / `-p` CLI flag (explicit user intent wins)
+	 * 2. Fall back to local `.opencode/ocx.jsonc` `profile` field
 	 * 3. Fall back to OCX_PROFILE env var
 	 * 4. Fall back to "default" profile (if it exists)
 	 * 5. No profile (base configs only)
 	 *
-	 * Explicit sources (local config, CLI, env) fail fast when invalid.
+	 * Explicit sources (CLI, local config, env) fail fast when invalid.
 	 * Only implicit/default resolution can fall back to base config.
 	 *
 	 * @param cwd - Working directory
@@ -372,38 +373,41 @@ export class ConfigResolver {
 	static async create(cwd: string, options?: { profile?: string }): Promise<ConfigResolver> {
 		const manager = ProfileManager.create(cwd)
 
-		// Resolve profile intent with explicit precedence:
-		// local config > CLI option > environment > implicit default
-		let profileName: string | null = null
-		let profileSource: ProfileResolutionSource = "none"
+		// Parse local config at the boundary regardless of CLI flag:
+		// a malformed local config must fail fast (Law 4), even when the
+		// flag would otherwise win. Only its `profile` field competes
+		// in the precedence chain below.
 		const localConfigDir = findLocalConfigDir(cwd)
+		let localProfileName: string | null = null
 		if (localConfigDir) {
 			const localOcxPath = join(localConfigDir, OCX_CONFIG_FILE)
 			if (existsSync(localOcxPath)) {
 				const localConfig = parseLocalOcxConfig(localOcxPath)
 				if (localConfig.profile !== undefined) {
-					profileName = requireNonEmptyExplicitProfile(
+					localProfileName = requireNonEmptyExplicitProfile(
 						localConfig.profile,
 						`local config at ${localOcxPath}`,
 					)
-					profileSource = "local-config"
 				}
 			}
 		}
 
-		// Preserve short-circuit precedence:
-		// once a higher-priority source is selected, lower-priority sources are ignored.
-		if (profileName === null) {
-			if (options?.profile !== undefined) {
-				profileName = requireNonEmptyExplicitProfile(options.profile, "CLI option --profile")
-				profileSource = "cli"
-			} else if (process.env.OCX_PROFILE !== undefined) {
-				profileName = requireNonEmptyExplicitProfile(
-					process.env.OCX_PROFILE,
-					"environment variable OCX_PROFILE",
-				)
-				profileSource = "env"
-			}
+		// Resolve profile intent with explicit precedence:
+		// CLI option > local config > environment > implicit default
+		let profileName: string | null = null
+		let profileSource: ProfileResolutionSource = "none"
+		if (options?.profile !== undefined) {
+			profileName = requireNonEmptyExplicitProfile(options.profile, "CLI option --profile")
+			profileSource = "cli"
+		} else if (localProfileName !== null) {
+			profileName = localProfileName
+			profileSource = "local-config"
+		} else if (process.env.OCX_PROFILE !== undefined) {
+			profileName = requireNonEmptyExplicitProfile(
+				process.env.OCX_PROFILE,
+				"environment variable OCX_PROFILE",
+			)
+			profileSource = "env"
 		}
 
 		const isInitialized = await manager.isInitialized()
@@ -486,6 +490,10 @@ export class ConfigResolver {
 				componentPath = this.profile.ocx.componentPath
 			}
 			if (this.profile.opencode) {
+				const profileKeys = Object.keys(this.profile.opencode)
+				if (isTTY) {
+					console.log(`[OCX Merge] Profile opencode keys: ${profileKeys.join(", ")}`)
+				}
 				opencode = this.mergeOpencode(opencode, this.profile.opencode)
 			}
 		}
@@ -504,10 +512,31 @@ export class ConfigResolver {
 		// 5. Apply local OpenCode config (ALWAYS merges with profile)
 		// Local opencode.jsonc always participates in merge regardless of exclude/include
 		// patterns to match OpenCode's layering semantics.
+		// Merge strategy: deep merge (project wins on conflicts), MCPs/providers merged by key.
 		if (this.localConfigDir) {
 			const localOpencodeConfig = this.loadLocalOpencodeConfig()
 			if (localOpencodeConfig) {
+				const localKeys = Object.keys(localOpencodeConfig)
+				if (isTTY) {
+					console.log(`[OCX Merge] Project opencode keys: ${localKeys.join(", ")}`)
+				}
+				const beforeKeys = new Set(Object.keys(opencode))
 				opencode = this.mergeOpencode(opencode, localOpencodeConfig)
+				const afterKeys = Object.keys(opencode)
+				const newKeys = afterKeys.filter((k) => !beforeKeys.has(k))
+				const conflictKeys = afterKeys.filter(
+					(k) => beforeKeys.has(k) && localOpencodeConfig[k] !== undefined,
+				)
+				if (newKeys.length > 0) {
+					if (isTTY) {
+						console.log(`[OCX Merge] Added from project: ${newKeys.join(", ")}`)
+					}
+				}
+				if (conflictKeys.length > 0) {
+					if (isTTY) {
+						console.log(`[OCX Merge] Project overrides profile for: ${conflictKeys.join(", ")}`)
+					}
+				}
 			}
 		}
 

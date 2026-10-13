@@ -22,7 +22,7 @@ import {
 import { handleError } from "../utils/handle-error"
 import { outputJson } from "../utils/json-output"
 import { logger } from "../utils/logger"
-import { getGlobalConfigPath } from "../utils/paths"
+import { getEffectiveCwd, getGlobalConfigPath } from "../utils/paths"
 import {
 	addCommonOptions,
 	addGlobalOption,
@@ -354,7 +354,7 @@ export function registerRegistryCommand(program: Command): void {
 	addCmd.action(async (url: string, options: RegistryAddOptions, command: Command) => {
 		let target: RegistryTarget | undefined
 		try {
-			const cwd = options.cwd ?? process.cwd()
+			const cwd = options.cwd ?? getEffectiveCwd()
 			target = await resolveRegistryTarget(options, command, cwd)
 			const { configDir, configPath } = target
 
@@ -427,7 +427,7 @@ export function registerRegistryCommand(program: Command): void {
 
 	removeCmd.action(async (name: string, options: RegistryOptions, command: Command) => {
 		try {
-			const cwd = options.cwd ?? process.cwd()
+			const cwd = options.cwd ?? getEffectiveCwd()
 			const target = await resolveRegistryTarget(options, command, cwd)
 
 			// Read config from resolved path
@@ -471,7 +471,7 @@ export function registerRegistryCommand(program: Command): void {
 
 	listCmd.action(async (options: RegistryOptions, command: Command) => {
 		try {
-			const cwd = options.cwd ?? process.cwd()
+			const cwd = options.cwd ?? getEffectiveCwd()
 			const target = await resolveRegistryTarget(options, command, cwd)
 
 			// Read config from resolved path

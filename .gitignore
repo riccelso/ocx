@@ -1,18 +1,48 @@
+# Dependencies
 node_modules/
-dist/
-.wrangler/
-*.log
-.DS_Store
-.env
-.env.local
 
-# Build artifacts
+# Build output
+dist/
 .turbo/
 workers/kdco-registry/dist/
+
+# Lock files (bun.lock is tracked intentionally for reproducibility)
+
+# Wrangler / Workers
+.wrangler/
+.dev.vars
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor / IDE
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+*.sublime-*
+
+# Tool version managers
+.tool-versions
 
 # Coverage
 coverage/
 
 # Test fixtures (temporary directories)
 packages/cli/tests/fixtures/tmp-*/
+
+# Recovery / cache
 .recovery/
+
+# TypeScript build info
+*.tsbuildinfo

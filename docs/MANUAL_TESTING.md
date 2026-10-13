@@ -1803,15 +1803,16 @@ All variations from `cli/commands.mdx` (opencode section).
 
 ### 12.7 Profile Resolution Priority: Flag Wins
 
-- [x] **Setup:** Multiple profiles, `OCX_PROFILE` set
+- [x] **Setup:** Multiple profiles, `OCX_PROFILE` set, local `.opencode/ocx.jsonc` with different `profile` field
 - [x] **Commands:**
   ```bash
   unset OCX_PROFILE
   export OCX_PROFILE=default
+  echo '{"profile": "other"}' > .opencode/ocx.jsonc
   $OCX_BIN oc -p work run "echo hello"
   unset OCX_PROFILE
   ```
-- [x] **Expected:** Uses work profile (flag overrides env)
+- [x] **Expected:** Uses work profile (flag overrides local config and env)
 - [x] **Verify:** Work profile used
 - [x] **Run result (2026-03-07):** PASS — with `OCX_PROFILE=default`, `-p work` won; output showed `Using profile: work` and `hello`.
 - [x] **Last tested:** _v2.0.2 on 2026-03-21_

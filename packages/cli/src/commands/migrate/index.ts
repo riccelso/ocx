@@ -29,7 +29,7 @@ import {
 import { ConfigError, ValidationError } from "../../utils/errors"
 import { handleError } from "../../utils/handle-error"
 import { logger } from "../../utils/logger"
-import { getGlobalConfigPath } from "../../utils/paths"
+import { getEffectiveCwd, getGlobalConfigPath } from "../../utils/paths"
 import {
 	buildReceiptFromLock,
 	type ConfigNormalizationAction,
@@ -800,7 +800,7 @@ function resolveRoot(options: MigrateOptions): string {
 	if (options.global) {
 		return options.cwd ?? getGlobalConfigPath()
 	}
-	return options.cwd ?? process.cwd()
+	return options.cwd ?? getEffectiveCwd()
 }
 
 /**
