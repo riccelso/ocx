@@ -771,7 +771,6 @@ async function runOpencode(args: string[], options: OpencodeOptions): Promise<vo
 					configDir: mergedConfig?.path,
 					configContent,
 					titleContext,
-					disableProjectConfig: !mergedConfig,
 				}),
 				stdin: "inherit",
 				stdout: "inherit",
