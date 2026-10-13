@@ -38,7 +38,7 @@ Each profile lives in `~/.config/opencode/profiles/<name>/` and contains:
 
 ## How It Works
 
-1. **Profile Resolution**: OCX resolves the active profile using a priority chain (local config → CLI flag → env var → default profile → none).
+1. **Profile Resolution**: OCX resolves the active profile using a priority chain (CLI flag → local config → env var → default profile → none).
 2. **Instruction Discovery**: OCX discovers instruction files walking up from the project directory to the git root.
 3. **Pattern Filtering**: Exclude/include patterns from the active profile filter which project instruction files OpenCode receives.
 4. **Launch**: OpenCode starts with the profile configuration and filtered instructions.
@@ -47,8 +47,8 @@ Each profile lives in `~/.config/opencode/profiles/<name>/` and contains:
 
 Profiles are resolved in this order:
 
-1. `profile` field in `.opencode/ocx.jsonc` (project-specific profile)
-2. `--profile <name>` / `-p <name>` flag (explicit override)
+1. `--profile <name>` / `-p <name>` flag (explicit override wins)
+2. `profile` field in `.opencode/ocx.jsonc` (project-specific profile)
 3. `OCX_PROFILE` environment variable
 4. `default` profile (if it exists)
 5. No profile (base configurations only)
