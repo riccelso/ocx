@@ -21,7 +21,7 @@ import { type DryRunAction, type DryRunResult, outputDryRun } from "../utils/dry
 import { ConfigError, NotFoundError, ValidationError } from "../utils/errors"
 import { handleError } from "../utils/handle-error"
 import { logger } from "../utils/logger"
-import { resolveTargetPath } from "../utils/paths"
+import { getEffectiveCwd, resolveTargetPath } from "../utils/paths"
 import { registerPlannedWriteOrThrow } from "../utils/planned-writes"
 import { hashBundle, hashContent } from "../utils/receipt"
 import { addCommonOptions, addGlobalOption, addVerboseOption } from "../utils/shared-options"
@@ -128,7 +128,7 @@ export function registerUpdateCommand(program: Command): void {
 // =============================================================================
 
 async function runUpdate(componentNames: string[], options: UpdateOptions): Promise<void> {
-	const cwd = options.cwd ?? process.cwd()
+	const cwd = options.cwd ?? getEffectiveCwd()
 	const provider = options.global
 		? await GlobalConfigProvider.requireInitialized()
 		: await LocalConfigProvider.requireInitialized(cwd)

@@ -5,6 +5,44 @@ import { resolveComponentTargetRoot } from "./component-root-resolution"
 import { ValidationError } from "./errors"
 import { PathValidationError, validatePath } from "./path-security"
 
+/**
+ * Returns the effective current working directory.
+ *
+ * When OCX is launched via the wrapper script (`~/.local/bin/ocx`), bun is
+ * relocated into the CLI source tree (`bun --cwd <cli-dir> src/index.ts`) and
+ * `process.cwd()` returns the OCX source path instead of the user's actual
+ * working directory. The wrapper saves the user's original cwd in the
+ * `OCX_ORIGINAL_CWD` environment variable before relocating.
+ *
+ * OCX_ORIGINAL_CWD is honored ONLY when the process really was relocated into
+ * the CLI source tree (Bun.main lives under the current cwd). Every child of
+ * an ocx-launched OpenCode session (agents, shells, test runners) inherits
+ * the variable too; in those processes cwd is the real working directory and
+ * the stale variable must be ignored, or commands like `ocx init` would act
+ * on the directory where OpenCode was started instead of the current one.
+ */
+export function getEffectiveCwd(opts?: {
+	env?: Record<string, string | undefined>
+	cwd?: string
+	mainPath?: string
+}): string {
+	const env = opts?.env ?? process.env
+	const cwd = opts?.cwd ?? process.cwd()
+	const mainPath =
+		opts?.mainPath ??
+		(typeof Bun !== "undefined" && typeof Bun.main === "string" ? Bun.main : undefined)
+
+	const originalCwd = env.OCX_ORIGINAL_CWD
+	if (!originalCwd) {
+		return cwd
+	}
+
+	const relocatedIntoSourceTree =
+		mainPath !== undefined && cwd !== "/" && mainPath.startsWith(`${cwd}/`)
+
+	return relocatedIntoSourceTree ? originalCwd : cwd
+}
+
 const LOCAL_CONFIG_ROOT = ".opencode"
 const LOCAL_CONFIG_PREFIX = `${LOCAL_CONFIG_ROOT}/`
 

@@ -89,19 +89,19 @@ describe("ConfigResolver", () => {
 			expect(config.profileName).toBe("work")
 		})
 
-		it("short-circuits to local config profile and ignores invalid lower-priority sources", async () => {
+		it("short-circuits to CLI profile and ignores invalid lower-priority sources", async () => {
 			await using tmp = await tmpdir({
 				git: true,
-				profile: { name: "local-wins", ocxConfig: { registries: {} } },
-				ocxConfig: { profile: "local-wins" },
+				profile: { name: "cli-wins", ocxConfig: { registries: {} } },
+				ocxConfig: { profile: "does-not-exist" },
 			})
 
-			process.env.OCX_PROFILE = "does-not-exist"
+			process.env.OCX_PROFILE = "also-missing"
 
-			const resolver = await ConfigResolver.create(tmp.path, { profile: "also-missing" })
+			const resolver = await ConfigResolver.create(tmp.path, { profile: "cli-wins" })
 			const config = resolver.resolve()
 
-			expect(config.profileName).toBe("local-wins")
+			expect(config.profileName).toBe("cli-wins")
 		})
 
 		it("resolves profile from OCX_PROFILE env when no explicit option", async () => {
@@ -121,6 +121,21 @@ describe("ConfigResolver", () => {
 			const config = resolver.resolve()
 
 			expect(config.profileName).toBe("personal") // NOT "default"
+		})
+
+		it("resolves profile from local config when no CLI flag", async () => {
+			await using tmp = await tmpdir({
+				git: true,
+				profile: { name: "local-pick", ocxConfig: { registries: {} } },
+				ocxConfig: { profile: "local-pick" },
+			})
+
+			process.env.OCX_PROFILE = "does-not-exist"
+
+			const resolver = await ConfigResolver.create(tmp.path)
+			const config = resolver.resolve()
+
+			expect(config.profileName).toBe("local-pick")
 		})
 
 		it("falls back to 'default' profile when no option or env", async () => {

@@ -11,6 +11,7 @@ import { ConflictError, EXIT_CODES } from "../utils/errors"
 import { handleError } from "../utils/handle-error"
 import { logger } from "../utils/logger"
 import { checkFileIntegrity } from "../utils/receipt"
+import { getEffectiveCwd } from "../utils/paths"
 import { addCommonOptions, addVerboseOption } from "../utils/shared-options"
 import { createSpinner } from "../utils/spinner"
 
@@ -40,7 +41,7 @@ export function registerVerifyCommand(program: Command): void {
 }
 
 async function runVerify(componentNames: string[], options: VerifyOptions): Promise<void> {
-	const cwd = options.cwd ?? process.cwd()
+	const cwd = options.cwd ?? getEffectiveCwd()
 	const provider = await LocalConfigProvider.requireInitialized(cwd)
 
 	// V1: Read receipt

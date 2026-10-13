@@ -21,6 +21,7 @@ import {
 import { handleError } from "../utils/handle-error"
 import { outputJson } from "../utils/json-output"
 import { logger } from "../utils/logger"
+import { getEffectiveCwd } from "../utils/paths"
 import { createSpinner } from "../utils/spinner"
 import { categorizeValidationErrors, summarizeValidationErrors } from "../utils/validation-errors"
 
@@ -109,7 +110,7 @@ export function registerBuildCommand(program: Command): void {
 		.description("Build a registry from source (for registry authors)")
 		.argument("[path]", "Registry source directory", ".")
 		.option("--out <dir>", "Output directory", "./dist")
-		.option("--cwd <path>", "Working directory", process.cwd())
+		.option("--cwd <path>", "Working directory", getEffectiveCwd())
 		.option("--json", "Output as JSON", false)
 		.option("-q, --quiet", "Suppress output", false)
 		.option("--dry-run", "Validate and show what would be built")

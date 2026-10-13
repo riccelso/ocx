@@ -21,8 +21,9 @@ import { dedupePluginsByCanonicalName, extractCanonicalPluginName } from "../reg
 import { ConfigError } from "../utils/errors"
 import { getGitInfo } from "../utils/git-context"
 import { handleError } from "../utils/handle-error"
-import { logger } from "../utils/logger"
-import { getGlobalConfigPath } from "../utils/paths"
+import { isTTY } from "../utils/env"
+import { logger, setLoggerOptions } from "../utils/logger"
+import { getGlobalConfigPath, getEffectiveCwd } from "../utils/paths"
 import {
 	canWriteOscTerminalTitle,
 	formatTerminalName,
@@ -548,9 +549,11 @@ export function buildOpenCodeEnv(opts: {
 	configDir?: string
 	configContent?: string
 	titleContext?: OpenCodeTitleContext
+	disableProjectConfig?: boolean
 }): Record<string, string | undefined> {
 	// Profile presence gates both OPENCODE_DISABLE_PROJECT_CONFIG and OPENCODE_CONFIG_DIR
 	const hasProfile = Boolean(opts.profileName)
+	const shouldDisableProjectConfig = opts.disableProjectConfig ?? hasProfile
 	// Never leak stale inherited disable flag into no-profile launches.
 	const {
 		OPENCODE_DISABLE_PROJECT_CONFIG: _inheritedDisableProjectConfig,
@@ -565,7 +568,7 @@ export function buildOpenCodeEnv(opts: {
 	return {
 		...baseEnvWithoutDisableProjectConfig,
 		...(opts.opencodeBin !== undefined && { OPENCODE_BIN: opts.opencodeBin }),
-		...(hasProfile && { OPENCODE_DISABLE_PROJECT_CONFIG: "true" }),
+		...(shouldDisableProjectConfig && { OPENCODE_DISABLE_PROJECT_CONFIG: "true" }),
 		OPENCODE_CONFIG_DIR:
 			opts.configDir ??
 			(hasProfile ? getProfileDir(opts.profileName as string) : getGlobalConfigPath()),
@@ -596,8 +599,13 @@ export function registerOpencodeCommand(program: Command): void {
 }
 
 async function runOpencode(args: string[], options: OpencodeOptions): Promise<void> {
-	// Resolve project directory
-	const projectDir = process.cwd()
+	// When stdout is piped (not a TTY), consumers expect a clean stream (e.g. NDJSON).
+	// Silence info-level CLI feedback so it does not interleave with child output.
+	if (!isTTY) {
+		setLoggerOptions({ quiet: true })
+	}
+	// Resolve project directory (use OCX_ORIGINAL_CWD when launched via wrapper script)
+	const projectDir = getEffectiveCwd()
 
 	// Create resolver with optional profile override
 	const resolver = await ConfigResolver.create(projectDir, { profile: options.profile })

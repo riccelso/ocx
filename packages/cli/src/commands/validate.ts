@@ -19,6 +19,7 @@ import {
 import { handleError } from "../utils/handle-error"
 import { outputJson } from "../utils/json-output"
 import { logger } from "../utils/logger"
+import { getEffectiveCwd } from "../utils/paths"
 import { summarizeValidationErrors } from "../utils/validation-errors"
 
 interface ValidateOptions {
@@ -76,7 +77,7 @@ export function registerValidateCommand(program: Command): void {
 		.command("validate")
 		.description("Validate a registry source (for registry authors)")
 		.argument("[path]", "Registry source directory", ".")
-		.option("--cwd <path>", "Working directory", process.cwd())
+		.option("--cwd <path>", "Working directory", getEffectiveCwd())
 		.option("--json", "Output as JSON", false)
 		.option("-q, --quiet", "Suppress output", false)
 		.option("--no-duplicate-targets", "Skip duplicate target validation")

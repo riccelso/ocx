@@ -1,3 +1,4 @@
+import { log } from "node:console"
 import { randomUUID } from "node:crypto"
 import {
 	copyFile,
@@ -11,6 +12,7 @@ import {
 	rename,
 	rm,
 	unlink,
+	writeFile,
 } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { basename, dirname, isAbsolute, join, relative } from "node:path"
@@ -18,6 +20,7 @@ import { Glob } from "bun"
 import { type ParseError, parse as parseJsonc, printParseErrorCode } from "jsonc-parser"
 import { array, object, string } from "zod"
 import { findLocalConfigDir, OCX_CONFIG_FILE } from "../profile/paths"
+import { isTTY } from "../utils/env"
 import { ConfigError } from "../utils/errors"
 import { validatePath } from "../utils/path-security"
 
@@ -1041,6 +1044,52 @@ function toPrimaryPrepareError(error: unknown): ConfigError {
 	)
 }
 
+async function appendInstructionFilesToMergedDir(
+	projectDir: string,
+	mergedConfigDir: string,
+): Promise<{ appended: string[]; skipped: string[] }> {
+	const instructionFiles = ["AGENTS.md", "CLAUDE.md", "CONTEXT.md"]
+	const appended: string[] = []
+	const skipped: string[] = []
+
+	for (const filename of instructionFiles) {
+		const sourcePath = join(projectDir, filename)
+		const destPath = join(mergedConfigDir, filename)
+
+		let projectContent: string
+		try {
+			projectContent = await readFile(sourcePath, "utf-8")
+		} catch (error) {
+			const errorCode = (error as NodeJS.ErrnoException).code
+			if (errorCode === "ENOENT") {
+				continue
+			}
+			throw error
+		}
+
+		let profileContent = ""
+		try {
+			profileContent = await readFile(destPath, "utf-8")
+		} catch (error) {
+			const errorCode = (error as NodeJS.ErrnoException).code
+			if (errorCode !== "ENOENT") {
+				throw error
+			}
+		}
+
+		if (profileContent.trim().length === 0) {
+			await writeFile(destPath, projectContent, "utf-8")
+			appended.push(`${filename} (project only)`)
+		} else {
+			const separator = `\n\n---\n## Project Configuration\n\n`
+			await writeFile(destPath, profileContent + separator + projectContent, "utf-8")
+			appended.push(`${filename} (merged: profile + project)`)
+		}
+	}
+
+	return { appended, skipped }
+}
+
 export async function prepareMergedConfigDirForProfile(
 	options: PrepareMergedConfigDirOptions,
 ): Promise<PreparedMergedConfigDir> {
@@ -1052,6 +1101,16 @@ export async function prepareMergedConfigDirForProfile(
 		mergedConfigDir = await mkdtemp(join(tmpdir(), OPENCODE_MERGED_DIR_PREFIX))
 
 		await copyProfileBaseToMergedDir(options.profileDir, mergedConfigDir)
+
+		const appendResult = await appendInstructionFilesToMergedDir(
+			options.projectDir,
+			mergedConfigDir,
+		)
+		if (appendResult.appended.length > 0) {
+			if (isTTY) {
+				log(`[OCX Merge] Instruction files: ${appendResult.appended.join("; ")}`)
+			}
+		}
 
 		let hardeningLevel: OverlayHardeningLevel = "best-effort-js"
 
