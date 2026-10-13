@@ -32,7 +32,12 @@ export {
 } from "./config"
 
 // OCX profile schemas
-export { type ProfileOcxConfig, profileOcxConfigSchema } from "./ocx"
+export {
+	type ProfileOcxConfig,
+	profileOcxConfigSchema,
+	type ServerFallbackMode,
+	serverFallbackSchema,
+} from "./ocx"
 
 // Registry & component schemas
 export {

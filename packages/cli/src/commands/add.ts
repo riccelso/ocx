@@ -240,7 +240,9 @@ export function registerAddCommand(program: Command): void {
 			} else if (runtimeOptions.global) {
 				provider = await GlobalConfigProvider.requireInitialized()
 			} else {
-				provider = await LocalConfigProvider.requireInitialized(runtimeOptions.cwd ?? getEffectiveCwd())
+				provider = await LocalConfigProvider.requireInitialized(
+					runtimeOptions.cwd ?? getEffectiveCwd(),
+				)
 			}
 
 			await runAddCore(components, runtimeOptions, provider)
