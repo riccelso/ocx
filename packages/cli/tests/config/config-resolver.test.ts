@@ -388,5 +388,129 @@ describe("ConfigResolver", () => {
 			expect(nested.shared).toBe("local-value") // Local wins
 			expect(config.opencode.topLevel).toBe("local") // Local wins
 		})
+
+		it("merges global opencode.jsonc as base layer (global → profile → local)", async () => {
+			const globalDir = path.join(xdgDir, "opencode")
+			await fs.mkdir(globalDir, { recursive: true })
+			await Bun.write(
+				path.join(globalDir, "opencode.jsonc"),
+				JSON.stringify({
+					fromGlobal: "yes",
+					shared: "global-value",
+				}),
+			)
+
+			await using tmp = await tmpdir({
+				git: true,
+				profile: {
+					name: "default",
+					ocxConfig: { registries: {}, exclude: [], include: [] },
+					opencodeConfig: {
+						fromProfile: "yes",
+						shared: "profile-value",
+					},
+				},
+				opencodeConfig: {
+					fromLocal: "yes",
+					shared: "local-value",
+				},
+			})
+
+			const resolver = await ConfigResolver.create(tmp.path)
+			const config = resolver.resolve()
+
+			expect(config.opencode.fromGlobal).toBe("yes")
+			expect(config.opencode.fromProfile).toBe("yes")
+			expect(config.opencode.fromLocal).toBe("yes")
+			expect(config.opencode.shared).toBe("local-value") // local > profile > global
+		})
+
+		it("applies global opencode.jsonc when no profile is active", async () => {
+			const globalDir = path.join(xdgDir, "opencode")
+			await fs.mkdir(globalDir, { recursive: true })
+			await Bun.write(path.join(globalDir, "opencode.jsonc"), JSON.stringify({ fromGlobal: "yes" }))
+
+			await using tmp = await tmpdir({ git: true })
+
+			const resolver = await ConfigResolver.create(tmp.path)
+			const config = resolver.resolve()
+
+			expect(config.profileName).toBeNull()
+			expect(config.opencode.fromGlobal).toBe("yes")
+		})
+
+		it("merges global mcp servers by key with profile servers (profile wins)", async () => {
+			const globalDir = path.join(xdgDir, "opencode")
+			await fs.mkdir(globalDir, { recursive: true })
+			await Bun.write(
+				path.join(globalDir, "opencode.jsonc"),
+				JSON.stringify({
+					mcp: {
+						"ai-memory": { type: "remote", url: "http://global.example/mcp" },
+						firecrawl: { type: "local", enabled: false },
+					},
+				}),
+			)
+
+			await using tmp = await tmpdir({
+				git: true,
+				profile: {
+					name: "default",
+					ocxConfig: { registries: {}, exclude: [], include: [] },
+					opencodeConfig: {
+						mcp: {
+							"ai-memory": { type: "remote", url: "http://profile.example/mcp" },
+							playwright: { type: "local", enabled: true },
+						},
+					},
+				},
+			})
+
+			const resolver = await ConfigResolver.create(tmp.path)
+			const config = resolver.resolve()
+
+			const mcp = config.opencode.mcp as Record<string, Record<string, unknown>>
+			expect(Object.keys(mcp).sort()).toEqual(["ai-memory", "firecrawl", "playwright"])
+			expect(mcp["ai-memory"]?.url).toBe("http://profile.example/mcp") // profile overrides global
+		})
+
+		it("resolveWithOrigin marks global keys as global-opencode source", async () => {
+			const globalDir = path.join(xdgDir, "opencode")
+			await fs.mkdir(globalDir, { recursive: true })
+			await Bun.write(path.join(globalDir, "opencode.jsonc"), JSON.stringify({ fromGlobal: "yes" }))
+
+			await using tmp = await tmpdir({
+				git: true,
+				profile: {
+					name: "default",
+					ocxConfig: { registries: {}, exclude: [], include: [] },
+					opencodeConfig: { fromProfile: "yes" },
+				},
+			})
+
+			const resolver = await ConfigResolver.create(tmp.path)
+			const configWithOrigin = resolver.resolveWithOrigin()
+
+			expect(configWithOrigin.origins.get("opencode.fromGlobal")).toMatchObject({
+				source: "global-opencode",
+			})
+			expect(configWithOrigin.origins.get("opencode.fromProfile")).toMatchObject({
+				source: "global-profile",
+			})
+		})
+
+		it("fails fast when global opencode.jsonc is malformed", async () => {
+			const globalDir = path.join(xdgDir, "opencode")
+			await fs.mkdir(globalDir, { recursive: true })
+			await Bun.write(path.join(globalDir, "opencode.jsonc"), "{ not valid jsonc")
+
+			await using tmp = await tmpdir({ git: true })
+
+			await expect(ConfigResolver.create(tmp.path)).rejects.toThrow(
+				expect.objectContaining({
+					message: expect.stringContaining("global OpenCode config"),
+				}),
+			)
+		})
 	})
 })

@@ -7,6 +7,9 @@
  * Spawns OpenCode with the resolved configuration.
  */
 
+import { randomUUID } from "node:crypto"
+import { unlink } from "node:fs/promises"
+import { tmpdir } from "node:os"
 import * as path from "node:path"
 import type { Command } from "commander"
 import { type ParseError, parse as parseJsonc, printParseErrorCode } from "jsonc-parser"
@@ -534,6 +537,24 @@ export interface OpenCodeTitleContext {
 }
 
 /**
+ * Linux MAX_ARG_STRLEN caps a single environment string at ~128 KiB
+ * (per-string execve limit). Inline config above this threshold fails the
+ * spawn with E2BIG, so it must be delivered as a file instead.
+ * Threshold keeps headroom below the 131072-byte kernel limit.
+ */
+export const MAX_INLINE_OPENCODE_CONFIG_BYTES = 100_000
+
+/**
+ * Decide how to deliver the serialized OpenCode config to the child process.
+ * Small configs go inline via OPENCODE_CONFIG_CONTENT; larger ones (e.g.
+ * merged global → profile → local stacks) exceed the env-string limit and
+ * must use an OPENCODE_CONFIG file instead.
+ */
+export function shouldUseConfigFileDelivery(serializedByteLength: number): boolean {
+	return serializedByteLength > MAX_INLINE_OPENCODE_CONFIG_BYTES
+}
+
+/**
  * Builds environment variables to pass to the opencode process.
  * Returns a NEW object - does not mutate baseEnv.
  *
@@ -547,6 +568,11 @@ export interface OpenCodeTitleContext {
  *   otherwise profile active → profile-specific dir; no profile → global config dir
  * - configContent is a pre-serialized JSON string; upstream OpenCode handles
  *   {env:...} / {file:...} token resolution in OPENCODE_CONFIG_CONTENT
+ * - configFile is an absolute path to a JSONC file delivered via OPENCODE_CONFIG
+ *   (used when the serialized config exceeds the inline env-string limit);
+ *   OpenCode ranks it just below OPENCODE_CONFIG_CONTENT and above the
+ *   config-dir global file
+ * - Inherited OPENCODE_CONFIG is stripped so stale paths never leak through
  */
 export function buildOpenCodeEnv(opts: {
 	baseEnv: Record<string, string | undefined>
@@ -555,16 +581,17 @@ export function buildOpenCodeEnv(opts: {
 	opencodeBin?: string
 	configDir?: string
 	configContent?: string
+	configFile?: string
 	titleContext?: OpenCodeTitleContext
 	disableProjectConfig?: boolean
 }): Record<string, string | undefined> {
-	// Profile presence gates both OPENCODE_DISABLE_PROJECT_CONFIG and OPENCODE_CONFIG_DIR
 	const hasProfile = Boolean(opts.profileName)
 	const shouldDisableProjectConfig = opts.disableProjectConfig ?? hasProfile
 	// Never leak stale inherited disable flag into no-profile launches.
 	const {
 		OPENCODE_DISABLE_PROJECT_CONFIG: _inheritedDisableProjectConfig,
 		OPENCODE_BIN: _inheritedOpencodeBin,
+		OPENCODE_CONFIG: _inheritedOpenCodeConfig,
 		OCX_CONTEXT: _inheritedOcxContext,
 		OCX_BIN: _inheritedOcxBin,
 		OCX_PROFILE: _inheritedOcxProfile,
@@ -580,6 +607,7 @@ export function buildOpenCodeEnv(opts: {
 			opts.configDir ??
 			(hasProfile ? getProfileDir(opts.profileName as string) : getGlobalConfigPath()),
 		...(opts.configContent && { OPENCODE_CONFIG_CONTENT: opts.configContent }),
+		...(opts.configFile && { OPENCODE_CONFIG: opts.configFile }),
 		...(hasProfile && { OCX_CONTEXT: "1" }),
 		...(hasProfile && opts.ocxBin && { OCX_BIN: opts.ocxBin }),
 		...(opts.profileName && { OCX_PROFILE: opts.profileName }),
@@ -690,6 +718,7 @@ async function runOpencode(args: string[], options: OpencodeOptions): Promise<vo
 	// Setup signal handlers BEFORE spawn to avoid race condition
 	let proc: ReturnType<typeof Bun.spawn> | null = null
 	let mergedConfig: PreparedMergedConfigDir | null = null
+	let spawnedConfigFile: string | null = null
 	let primaryFailure: Error | null = null
 	let childExitCode: number | null = null
 	let preSpawnSignalExitCode: number | null = null
@@ -783,8 +812,21 @@ async function runOpencode(args: string[], options: OpencodeOptions): Promise<vo
 			serverStatus: serverStatusPromise,
 		})
 
-		// Spawn OpenCode directly in the project directory with config via environment
-		const configContent = configToPass ? JSON.stringify(configToPass) : undefined
+		// Spawn OpenCode directly in the project directory with config via environment.
+		// Huge merged configs (global → profile → local) exceed the ~128 KiB
+		// per-string env limit (Linux MAX_ARG_STRLEN) and fail with E2BIG, so
+		// they are written to a temp JSON file and delivered via OPENCODE_CONFIG
+		// (ranked by OpenCode just below OPENCODE_CONFIG_CONTENT).
+		const serializedConfig = configToPass ? JSON.stringify(configToPass) : undefined
+		let configContent: string | undefined
+		if (serializedConfig !== undefined) {
+			if (shouldUseConfigFileDelivery(Buffer.byteLength(serializedConfig, "utf8"))) {
+				spawnedConfigFile = path.join(tmpdir(), `ocx-oc-config-${randomUUID()}.json`)
+				await Bun.write(spawnedConfigFile, serializedConfig)
+			} else {
+				configContent = serializedConfig
+			}
+		}
 
 		try {
 			proc = Bun.spawn({
@@ -797,6 +839,7 @@ async function runOpencode(args: string[], options: OpencodeOptions): Promise<vo
 					opencodeBin: resolvedOpenCodeLaunchBin,
 					configDir: mergedConfig?.path,
 					configContent,
+					configFile: spawnedConfigFile ?? undefined,
 					titleContext,
 				}),
 				stdin: "inherit",
@@ -849,6 +892,19 @@ async function runOpencode(args: string[], options: OpencodeOptions): Promise<vo
 									`Failed to remove temporary merged config directory: ${String(cleanupError)}`,
 								)
 					primaryFailure = cleanupFailure
+				}
+			}
+		}
+
+		if (spawnedConfigFile) {
+			try {
+				await unlink(spawnedConfigFile)
+			} catch (cleanupError: unknown) {
+				const code = (cleanupError as NodeJS.ErrnoException | undefined)?.code
+				if (code !== "ENOENT") {
+					logger.warn(
+						`Cleanup warning: failed to remove temporary config file ${spawnedConfigFile}: ${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}`,
+					)
 				}
 			}
 		}

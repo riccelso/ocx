@@ -4,9 +4,11 @@ import { join } from "node:path"
 import {
 	buildOpenCodeEnv,
 	dedupeLastWins,
+	MAX_INLINE_OPENCODE_CONFIG_BYTES,
 	resolveOpenCodeBinary,
 	resolveStableOcxExecutablePath,
 	resolveStableOpenCodeLauncherPath,
+	shouldUseConfigFileDelivery,
 } from "../src/commands/opencode"
 import { EXIT_CODES } from "../src/utils/errors"
 import { cleanupTempDir, createTempDir, runCLI, runCLIIsolated } from "./helpers"
@@ -212,6 +214,20 @@ describe("resolveStableOcxExecutablePath", () => {
 	})
 })
 
+describe("shouldUseConfigFileDelivery", () => {
+	it("keeps small configs inline (below threshold)", () => {
+		expect(shouldUseConfigFileDelivery(0)).toBe(false)
+		expect(shouldUseConfigFileDelivery(MAX_INLINE_OPENCODE_CONFIG_BYTES)).toBe(false)
+	})
+
+	it("switches to file delivery above the env-string threshold", () => {
+		// Linux MAX_ARG_STRLEN (~128 KiB) caps a single env string; the
+		// threshold keeps headroom below it.
+		expect(shouldUseConfigFileDelivery(MAX_INLINE_OPENCODE_CONFIG_BYTES + 1)).toBe(true)
+		expect(shouldUseConfigFileDelivery(200_000)).toBe(true)
+	})
+})
+
 describe("buildOpenCodeEnv", () => {
 	it("sets OPENCODE_DISABLE_PROJECT_CONFIG when profile is active", () => {
 		const result = buildOpenCodeEnv({
@@ -219,6 +235,37 @@ describe("buildOpenCodeEnv", () => {
 			profileName: "work",
 		})
 		expect(result.OPENCODE_DISABLE_PROJECT_CONFIG).toBe("true")
+	})
+
+	it("sets OPENCODE_CONFIG when configFile provided", () => {
+		const result = buildOpenCodeEnv({
+			baseEnv: {},
+			profileName: "work",
+			configFile: "/tmp/ocx-oc-config-example.json",
+		})
+		expect(result.OPENCODE_CONFIG).toBe("/tmp/ocx-oc-config-example.json")
+	})
+
+	it("removes inherited OPENCODE_CONFIG when no configFile provided", () => {
+		const result = buildOpenCodeEnv({
+			baseEnv: {
+				OPENCODE_CONFIG: "/stale/path/from/parent.json",
+				PATH: "/usr/bin",
+			},
+		})
+
+		expect(result.OPENCODE_CONFIG).toBeUndefined()
+		expect("OPENCODE_CONFIG" in result).toBe(false)
+		expect(result.PATH).toBe("/usr/bin")
+	})
+
+	it("does not set OPENCODE_CONFIG_CONTENT when using configFile delivery", () => {
+		const result = buildOpenCodeEnv({
+			baseEnv: {},
+			profileName: "work",
+			configFile: "/tmp/ocx-oc-config-example.json",
+		})
+		expect(result.OPENCODE_CONFIG_CONTENT).toBeUndefined()
 	})
 
 	it("does NOT set OPENCODE_DISABLE_PROJECT_CONFIG when no profile active", () => {

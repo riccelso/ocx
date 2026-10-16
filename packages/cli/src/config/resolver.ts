@@ -7,9 +7,11 @@
  *
  * Visibility controlled by profile `ocx.jsonc` include/exclude patterns.
  * OCX configs (ocx.jsonc) remain ISOLATED per scope - they do NOT merge.
- * OpenCode configs (opencode.jsonc) ALWAYS merge: profile → local.
- * Local opencode.jsonc always participates regardless of exclude/include
- * patterns, matching OpenCode's native layering semantics.
+ * OpenCode configs (opencode.jsonc) ALWAYS merge: global → profile → local.
+ * The global layer (~/.config/opencode/opencode.jsonc) is the base: it applies
+ * with and without a profile and has the LOWEST precedence (profile and local
+ * override it). Local opencode.jsonc always participates regardless of
+ * exclude/include patterns, matching OpenCode's native layering semantics.
  *
  * This is controlled by exclude/include patterns from the profile.
  *
@@ -71,7 +73,12 @@ export interface ResolvedConfig {
 /**
  * Source of a configuration value for debugging.
  */
-export type ConfigSource = "global-profile" | "local-config" | "local-opencode" | "default"
+export type ConfigSource =
+	| "global-opencode"
+	| "global-profile"
+	| "local-config"
+	| "local-opencode"
+	| "default"
 
 /**
  * Tracks where a configuration value originated.
@@ -145,27 +152,53 @@ function parseLocalOcxConfig(configPath: string): OcxConfig {
 	return validationResult.data
 }
 
-function parseLocalOpencodeConfig(configPath: string): Record<string, unknown> {
+/**
+ * Parse an opencode.jsonc file from any layer.
+ * sourceLabel names the layer ("local" / "global") for error messages.
+ */
+function parseOpencodeConfigFile(configPath: string, sourceLabel: string): Record<string, unknown> {
 	let text: string
 	try {
 		text = readFileSync(configPath, "utf8")
 	} catch (error) {
 		const reason = error instanceof Error ? error.message : "Unknown read error"
-		throw new ConfigError(`Failed to read local OpenCode config at ${configPath}: ${reason}`)
+		throw new ConfigError(
+			`Failed to read ${sourceLabel} OpenCode config at ${configPath}: ${reason}`,
+		)
 	}
 
 	const parseErrors: ParseError[] = []
 	const parsed = parseJsonc(text, parseErrors, { allowTrailingComma: true })
 	if (parseErrors.length > 0) {
 		const errorDetail = formatJsoncParseError(parseErrors)
-		throw new ConfigError(`Invalid JSONC in local OpenCode config at ${configPath}: ${errorDetail}`)
+		throw new ConfigError(
+			`Invalid JSONC in ${sourceLabel} OpenCode config at ${configPath}: ${errorDetail}`,
+		)
 	}
 
 	if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-		throw new ConfigError(`Invalid local OpenCode config at ${configPath}: root must be an object`)
+		throw new ConfigError(
+			`Invalid ${sourceLabel} OpenCode config at ${configPath}: root must be an object`,
+		)
 	}
 
 	return parsed as Record<string, unknown>
+}
+
+function parseLocalOpencodeConfig(configPath: string): Record<string, unknown> {
+	return parseOpencodeConfigFile(configPath, "local")
+}
+
+/**
+ * Load the global OpenCode config (~/.config/opencode/opencode.jsonc or XDG equivalent).
+ * Returns null if the file does not exist.
+ * Throws ConfigError if the file exists but is invalid.
+ */
+function loadGlobalOpencodeConfig(): Record<string, unknown> | null {
+	const configPath = join(getGlobalConfigPath(), OPENCODE_CONFIG_FILE)
+	if (!existsSync(configPath)) return null
+
+	return parseOpencodeConfigFile(configPath, "global")
 }
 
 // =============================================================================
@@ -331,6 +364,7 @@ export class ConfigResolver {
 	private readonly profileName: string | null
 	private readonly profile: Profile | null
 	private readonly localConfigDir: string | null
+	private readonly globalOpencodeConfig: Record<string, unknown> | null
 	private readonly registryInstructions: string[]
 
 	// Cached resolution (computed lazily, memoized)
@@ -341,12 +375,14 @@ export class ConfigResolver {
 		profileName: string | null,
 		profile: Profile | null,
 		localConfigDir: string | null,
+		globalOpencodeConfig: Record<string, unknown> | null,
 		registryInstructions: string[],
 	) {
 		this.cwd = cwd
 		this.profileName = profileName
 		this.profile = profile
 		this.localConfigDir = localConfigDir
+		this.globalOpencodeConfig = globalOpencodeConfig
 		this.registryInstructions = registryInstructions
 	}
 
@@ -458,14 +494,25 @@ export class ConfigResolver {
 
 		const registryInstructions = await loadRegistryInstructionsFromReceipt(installRoot)
 
-		return new ConfigResolver(cwd, profileName, profile, localConfigDir, registryInstructions)
+		// Load the global opencode.jsonc base layer at the boundary (Law 2).
+		// Applies with and without a profile; lowest precedence.
+		const globalOpencodeConfig = loadGlobalOpencodeConfig()
+
+		return new ConfigResolver(
+			cwd,
+			profileName,
+			profile,
+			localConfigDir,
+			globalOpencodeConfig,
+			registryInstructions,
+		)
 	}
 
 	/**
 	 * Resolve configuration with global profile support.
 	 *
 	 * - Registries: Profile OR local (isolated, not merged)
-	 * - OpenCode config: Always merged (profile + local) to match OpenCode layering.
+	 * - OpenCode config: Always merged (global → profile → local) to match OpenCode layering.
 	 *   Local opencode.jsonc always participates in merge regardless of exclude/include
 	 *   patterns, because exclude/include controls instruction file discovery, not config merging.
 	 *
@@ -482,6 +529,16 @@ export class ConfigResolver {
 		let registries: Record<string, RegistryConfig> = {}
 		let componentPath = LOCAL_CONFIG_DIR
 		let opencode: Record<string, unknown> = {}
+
+		// 1.5 Apply the global opencode.jsonc base layer (lowest precedence).
+		// Applies with and without a profile; profile and local override it.
+		if (this.globalOpencodeConfig) {
+			const globalKeys = Object.keys(this.globalOpencodeConfig)
+			if (isTTY) {
+				console.log(`[OCX Merge] Global opencode keys: ${globalKeys.join(", ")}`)
+			}
+			opencode = this.mergeOpencode(opencode, this.globalOpencodeConfig)
+		}
 
 		// 2. Apply global profile if resolved
 		if (this.profile) {
@@ -567,6 +624,15 @@ export class ConfigResolver {
 		let opencode: Record<string, unknown> = {}
 
 		origins.set("componentPath", { path: "", source: "default" })
+
+		// 1.5 Apply the global opencode.jsonc base layer (lowest precedence).
+		if (this.globalOpencodeConfig) {
+			const globalOpencodePath = join(getGlobalConfigPath(), OPENCODE_CONFIG_FILE)
+			opencode = this.mergeOpencode(opencode, this.globalOpencodeConfig)
+			for (const key of Object.keys(this.globalOpencodeConfig)) {
+				origins.set(`opencode.${key}`, { path: globalOpencodePath, source: "global-opencode" })
+			}
+		}
 
 		// 2. Apply global profile if resolved
 		if (this.profile) {
